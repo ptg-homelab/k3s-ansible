@@ -1,0 +1,22 @@
+---
+- hosts: k3s_cluster
+  gather_facts: yes
+  become: yes
+  tasks:
+  - name: Install required pkgs
+    apt:
+      pkg:
+      - nfs-common
+      - open-iscsi
+      - bash
+      - curl
+      - findmnt
+      - grep
+      - awk
+      - blkid
+  
+  - name: Enable open iscsi service
+    systemd:
+      name: open-iscsi
+      state: started
+      enabled: true

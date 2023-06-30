@@ -1,0 +1,10 @@
+---
+- hosts: node
+  gather_facts: yes
+  roles:
+    - role: prereq
+      become: true
+    - role: download
+      become: true
+    - role: k3s/node
+      become: true
