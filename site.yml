@@ -11,15 +11,15 @@
   hosts: k3s_cluster
   gather_facts: yes
   roles:
-    - role: lxc
-      become: true
-      when: proxmox_lxc_configure
+    # - role: lxc
+    #   become: true
+    #   when: proxmox_lxc_configure
     - role: prereq
       become: true
     - role: download
       become: true
-    - role: raspberrypi
-      become: true
+    # - role: raspberrypi
+    #   become: true
 
 - name: Setup k3s servers
   hosts: master
