@@ -6,5 +6,5 @@
       become: true
     - role: download
       become: true
-    - role: k3s/node
+    - role: k3s_agent
       become: true
