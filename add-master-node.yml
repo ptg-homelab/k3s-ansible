@@ -1,10 +1,10 @@
 ---
-- hosts: 192.168.123.101
+- hosts: master
   gather_facts: yes
   roles:
     - role: prereq
       become: true
     - role: download
       become: true
-    - role: k3s/master
+    - role: k3s_server
       become: true
