@@ -1,5 +1,5 @@
 ---
-- hosts: node
+- hosts: "{{ host_vm }}"
   gather_facts: yes
   roles:
     - role: prereq
