@@ -1,0 +1,136 @@
+---
+- name: upgrade metallb
+  hosts: son-goku-01
+  gather_facts: true
+  become: yes
+  tasks:
+    - name: Create manifests directory on first master
+      file:
+        path: /var/lib/rancher/k3s/server/manifests
+        state: directory
+        owner: root
+        group: root
+        mode: 0644
+    
+    - name: "Download to first master: manifest for metallb-{{ metal_lb_type }}"
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/metallb/metallb/{{ metal_lb_controller_tag_version }}/config/manifests/metallb-{{ metal_lb_type }}.yaml"  # noqa yaml[line-length]
+        dest: "/var/lib/rancher/k3s/server/manifests/metallb-crds.yaml"
+        owner: root
+        group: root
+        mode: 0644
+     
+
+    - name: Set image versions in manifest for metallb-{{ metal_lb_type }}
+      ansible.builtin.replace:
+        path: "/var/lib/rancher/k3s/server/manifests/metallb-crds.yaml"
+        regexp: "{{ item.change | ansible.builtin.regex_escape }}"
+        replace: "{{ item.to }}"
+      with_items:
+        - change: "metallb/speaker:{{ metal_lb_controller_tag_version }}"
+          to: "metallb/speaker:{{ metal_lb_speaker_tag_version }}"
+      loop_control:
+        label: "{{ item.change }} => {{ item.to }}"
+    
+  post_tasks:
+    - name: Create manifests directory for temp configuration
+      file:
+        path: /tmp/k3s
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        mode: 0755
+      with_items: "{{ groups[group_name_master | default('master')] }}"
+      run_once: true
+
+    - name: Copy metallb CRs manifest to first master
+      template:
+        src: "roles/k3s_server_post/templates/metallb.crs.j2"
+        dest: "/tmp/k3s/metallb-crs.yaml"
+        owner: "{{ ansible_user_id }}"
+        mode: 0755
+      with_items: "{{ groups[group_name_master | default('master')] }}"
+      run_once: true
+
+    - name: Test metallb-system namespace
+      command: >-
+        k3s kubectl -n metallb-system
+      changed_when: false
+      with_items: "{{ groups[group_name_master | default('master')] }}"
+      run_once: true
+
+    - name: Wait for MetalLB resources
+      command: >-
+        k3s kubectl wait {{ item.resource }}
+        --namespace='metallb-system'
+        {% if item.name | default(False) -%}{{ item.name }}{%- endif %}
+        {% if item.selector | default(False) -%}--selector='{{ item.selector }}'{%- endif %}
+        {% if item.condition | default(False) -%}{{ item.condition }}{%- endif %}
+        --timeout=30s
+      changed_when: false
+      run_once: true
+      with_items:
+        - description: controller
+          resource: deployment
+          name: controller
+          condition: --for condition=Available=True
+        - description: webhook service
+          resource: pod
+          selector: component=controller
+          condition: --for=jsonpath='{.status.phase}'=Running
+        - description: pods in replica sets
+          resource: pod
+          selector: component=controller,app=metallb
+          condition: --for condition=Ready
+        - description: ready replicas of controller
+          resource: replicaset
+          selector: component=controller,app=metallb
+          condition: --for=jsonpath='{.status.readyReplicas}'=1
+        - description: fully labeled replicas of controller
+          resource: replicaset
+          selector: component=controller,app=metallb
+          condition: --for=jsonpath='{.status.fullyLabeledReplicas}'=1
+        - description: available replicas of controller
+          resource: replicaset
+          selector: component=controller,app=metallb
+          condition: --for=jsonpath='{.status.availableReplicas}'=1
+      loop_control:
+        label: "{{ item.description }}"
+
+    - name: Test metallb-system webhook-service endpoint
+      command: >-
+        k3s kubectl -n metallb-system get endpoints webhook-service
+      changed_when: false
+      with_items: "{{ groups[group_name_master | default('master')] }}"
+      run_once: true
+
+    - name: Apply metallb CRs
+      command: >-
+        k3s kubectl apply -f /tmp/k3s/metallb-crs.yaml
+        --timeout=30s
+      register: this
+      changed_when: false
+      run_once: true
+      until: this.rc == 0
+      retries: 5
+
+    - name: Test metallb-system resources for Layer 2 configuration
+      command: >-
+        k3s kubectl -n metallb-system get {{ item }}
+      changed_when: false
+      run_once: true
+      when: metal_lb_mode == "layer2"
+      with_items:
+        - IPAddressPool
+        - L2Advertisement
+
+    - name: Test metallb-system resources for BGP configuration
+      command: >-
+        k3s kubectl -n metallb-system get {{ item }}
+      changed_when: false
+      run_once: true
+      when: metal_lb_mode == "bgp"
+      with_items:
+        - IPAddressPool
+        - BGPPeer
+        - BGPAdvertisement
+
