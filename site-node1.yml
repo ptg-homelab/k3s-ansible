@@ -20,8 +20,11 @@
     - role: k3s_agent
       become: true
 
-- name: Configure k3s cluster
+- name: Cleanup
   hosts: master
-  roles:
-    - role: k3s_server_post
-      become: true
+  become: true
+  tasks:
+  - name: Remove tmp directory used for manifests
+    file:
+      path: /tmp/k3s
+      state: absent

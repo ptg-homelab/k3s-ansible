@@ -1,0 +1,37 @@
+---
+- hosts: k3s_cluster2
+  become: true
+  tasks:
+    - name: Fix default gateway
+      ansible.builtin.command: >
+        ip route replace default via 192.168.123.1 dev eth0
+      changed_when: true
+
+    - name: Make gateway persistent via netplan
+      ansible.builtin.shell: |
+        cat > /etc/netplan/99-fix-gateway.yaml << EOF
+        network:
+          version: 2
+          ethernets:
+            eth0:
+              dhcp4: false
+              addresses:
+                - {{ ansible_host }}/24
+              routes:
+                - to: default
+                  via: 192.168.123.1
+              nameservers:
+                addresses:
+                  - 192.168.123.1
+                  - 8.8.8.8
+        EOF
+        netplan apply
+
+    - name: Verify gateway
+      ansible.builtin.command: ping -c 3 8.8.8.8
+      register: ping_result
+      changed_when: false
+
+    - name: Show ping result
+      ansible.builtin.debug:
+        msg: "{{ ping_result.stdout }}"
